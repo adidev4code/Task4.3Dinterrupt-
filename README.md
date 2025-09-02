@@ -1,99 +1,156 @@
-# Task 4.3D – Arduino Nano 33 IoT with Multiple Inputs and Timer Interrupts
-
-## 📌 Overview
-
-This task demonstrates how to manage **multiple external interrupts** together with a **timer interrupt** on the Arduino Nano 33 IoT (SAMD21 microcontroller). The system integrates user inputs (button and sensors), automatic tasks (via timer), and environmental monitoring using **ultrasonic** and **DHT sensors**.
-
-The objective is to show how interrupt-driven programming keeps the system **responsive and efficient**, without relying on blocking delays in the main loop.
+# 📘 Task 4.3D – Arduino Multiple Inputs with Timer Interrupts
 
 ---
 
-## 🎯 Learning Objectives
+## 🎯 Objective
 
-* Understand and implement **multiple external interrupts**.
-* Configure and use a **timer interrupt** on the SAMD21 microcontroller.
-* Integrate **real-world sensors** (Ultrasonic, DHT) with interrupt-driven logic.
-* Design a system that is responsive to **immediate events** while still performing **periodic tasks**.
-* Practice modular coding and documentation for embedded systems.
+The purpose of this task is to implement **multiple input handling using interrupts** on an Arduino board. The program should be capable of:
 
----
+1. Handling **external interrupts** via a push button.
+2. Handling **sensor inputs** (Ultrasonic + DHT22).
+3. Using a **timer interrupt** to perform a periodic task (LED blinking).
+4. Displaying sensor readings and interrupt logs on the **Serial Monitor**.
 
-## ⚙️ Hardware Used
-
-* **Arduino Nano 33 IoT (SAMD21)**
-* **Push button** (with pull-up enabled)
-* **Two external inputs** (can be sensors such as PIR/motion, LDR module, sound sensor, or simulated using push buttons)
-* **Ultrasonic sensor (HC-SR04)** for distance measurement
-* **DHT11/DHT22** temperature and humidity sensor
-* **Three LEDs** (with current-limiting resistors)
-* Jumper wires and breadboard
+This task demonstrates the principle of **asynchronous event-driven programming** in embedded systems.
 
 ---
 
-## 🛠️ Software Used
+## 🛠️ Hardware Requirements
 
-* **Arduino IDE / Arduino Web Editor**
-* **Libraries required:**
-
-  * SAMDTimerInterrupt (by Khoi Hoang)
-  * DHT sensor library (by Adafruit)
-
----
-
-## 🔌 System Connections (Wiring)
-
-* **Button** → Pin 2 (external interrupt)
-* **Sensor1** → Pin 3 (external interrupt)
-* **Sensor2** → Pin 4 (external interrupt)
-* **LED1** → Pin 5 (toggled by button)
-* **LED2** → Pin 6 (toggled by sensor1)
-* **LED3** → Pin 7 (toggled by timer interrupt)
-* **Ultrasonic Sensor:**
-
-  * TRIG → Pin 8
-  * ECHO → Pin 9
-* **DHT Sensor:**
-
-  * DATA → Pin 10 (with 10kΩ pull-up to 3.3V)
-* **Common GND** for all components
+* Arduino Nano 33 IoT (or compatible board)
+* 1x Push Button
+* 3x LEDs + 3x 220Ω resistors
+* 1x Ultrasonic sensor (HC-SR04)
+* 1x DHT22 Temperature & Humidity sensor (3-pin version)
+* Breadboard and jumper wires
 
 ---
 
-## 🔄 Workflow of Operations
+## 🔌 Hardware Setup (Pin Connections)
 
-1. **Initialization**
+| Component       | Arduino Pin | Notes                                   |
+| --------------- | ----------- | --------------------------------------- |
+| Button          | D2          | Uses `INPUT_PULLUP`, toggles LED1       |
+| LED1            | D5          | Toggled by button interrupt             |
+| LED2            | D6          | Controlled by ultrasonic distance check |
+| LED3            | D7          | Blinks every 1s via timer interrupt     |
+| Ultrasonic TRIG | D8          | Trigger pulse output                    |
+| Ultrasonic ECHO | D9          | Reads pulse width                       |
+| DHT22 Data      | D10         | Data pin (pull-up 10kΩ recommended)     |
+| Ultrasonic VCC  | 3.3V        | Power supply                            |
+| DHT22 VCC       | 3.3V        | Power supply                            |
+| All GND pins    | GND         | Common ground for all components        |
 
-   * All pins configured.
-   * External interrupts attached to button, sensor1, and sensor2.
-   * Timer interrupt configured to fire every **1 second**.
-   * Serial Monitor started for event logging.
-
-2. **External Interrupts**
-
-   * **Button Press (pin 2):** Toggles **LED1** and logs a message.
-   * **Sensor1 Trigger (pin 3):** Toggles **LED2** and logs a message.
-   * **Sensor2 Trigger (pin 4):** Logs a message only.
-
-3. **Timer Interrupt (every 1 second)**
-
-   * Toggles **LED3** automatically.
-   * Reads **Ultrasonic sensor** distance (in cm).
-   * Reads **DHT sensor** temperature and humidity.
-   * Logs all values to the Serial Monitor.
-
-4. **System Behavior**
-
-   * System responds **immediately** to events (button/sensor) via interrupts.
-   * At the same time, periodic tasks run reliably via the timer.
-   * The main `loop()` remains empty → fully interrupt-driven, non-blocking design.
+⚠️ Important: Use resistors with LEDs to prevent damage. Ensure all sensor grounds are common with Arduino GND.
 
 ---
 
-## 📊 Testing Procedure
+## 📜 Procedure
 
-1. Open Serial Monitor at **115200 baud**.
-2. Press the **button** → LED1 toggles, message logged.
-3. Trigger **Sensor1** → LED2 toggles, message logged.
-4. Trigger **Sensor2** → only a message logged.
-5. Observe **LED3 blinking** automatically every second.
-6. Check Serial Monitor → readings from ultrasonic and DHT sensors update every second.
+### Step 1: Hardware Assembly
+
+1. Connect **LED1 to pin D5**, **LED2 to pin D6**, **LED3 to pin D7**, each with a resistor.
+2. Connect **Button to pin D2**, with one side to GND and use `INPUT_PULLUP`.
+3. Connect **Ultrasonic sensor**:
+
+   * VCC → 3.3V
+   * GND → GND
+   * TRIG → D8
+   * ECHO → D9
+4. Connect **DHT22**:
+
+   * VCC → 3.3V
+   * GND → GND
+   * DATA → D10
+   * Pull-up resistor 10kΩ between VCC and DATA if needed.
+
+---
+
+### Step 2: Software Implementation
+
+1. Include the `DHT.h` library.
+2. Define pin mappings for LEDs, button, and sensors.
+3. Configure ISRs:
+
+   * **Button ISR** → toggles LED1.
+   * **Ultrasonic check (in loop)** → toggles LED2 when object < threshold.
+   * **Timer (millis-based)** → toggles LED3 every 1s.
+4. Print sensor data (Ultrasonic + DHT22) to Serial Monitor.
+
+---
+
+### Step 3: Workflow of Operation
+
+1. **Button interrupt**: Pressing the button toggles **LED1** immediately.
+2. **Ultrasonic sensor**:
+
+   * Sends pulses, measures distance.
+   * If an object is detected within 20 cm, **LED2 toggles**.
+   * Distance is printed to Serial Monitor.
+3. **DHT22 sensor**: Reads **temperature & humidity** values every cycle and logs them.
+4. **Timer interrupt**: Every 1 second, **LED3 toggles ON/OFF automatically**.
+5. **Serial Monitor**: Displays events, sensor data, and interrupt logs.
+
+---
+
+## 🔎 Flow of Operations
+
+1. Press button → ISR triggers → LED1 toggled.
+2. Place hand/object near ultrasonic → distance < 20 cm → LED2 toggled.
+3. Timer runs every 1s → LED3 blinks independently.
+4. Every cycle → DHT22 values (Temp + Humidity) printed.
+5. Serial Monitor shows logs from button, ultrasonic, DHT, and timer.
+
+---
+
+## 🧪 Testing
+
+### Test Cases & Expected Results
+
+| Test Action                            | Expected Result                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| Press button                           | LED1 toggles state, log appears on Serial Monitor                         |
+| Place hand close to ultrasonic (<20cm) | LED2 toggles, distance logged                                             |
+| Move hand away (>20cm)                 | LED2 stays in last state, distance updates                                |
+| Wait 1 second                          | LED3 toggles (blinks continuously)                                        |
+| Observe Serial Monitor                 | Logs show button events, ultrasonic distance, DHT readings, timer toggles |
+
+---
+
+## 🖥️ Sample Serial Monitor Output
+
+```
+Task 4.3D: Starting...
+Setup complete.
+Timer interrupt: LED3 toggled
+Ultrasonic distance: 55 cm
+Temperature: 26.00 °C | Humidity: 87.50 %
+Button interrupt: LED1 toggled
+Ultrasonic condition met: LED2 toggled
+Timer interrupt: LED3 toggled
+Ultrasonic distance: 12 cm
+Temperature: 27.00 °C | Humidity: 86.90 %
+```
+
+---
+
+## ✅ Results & Observations
+
+* LED1 successfully toggles on button press (external interrupt).
+* LED2 responds to ultrasonic proximity events.
+* LED3 blinks automatically every second (timer interrupt).
+* DHT22 provides accurate temperature and humidity readings.
+* Serial Monitor confirms real-time event handling.
+
+---
+
+## 📌 Conclusion
+
+The task was successfully completed.
+
+* **External interrupts** (button & sensor) worked correctly.
+* **Timer interrupt** functioned independently, toggling LED3 every second.
+* **Multiple sensor inputs** were integrated and logged properly.
+
+This project demonstrates **asynchronous multitasking** in Arduino — responding instantly to external events (button, ultrasonic), periodic tasks (timer), and sensor logging (DHT22).
+
