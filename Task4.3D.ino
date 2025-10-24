@@ -1,6 +1,8 @@
 // Code:
 
 #include <Arduino.h>
+#include <Wire.h>
+#include <BH1750.h>
 #include <SAMDTimerInterrupt.h>
 #include <SAMD_ISR_Timer.h>
 
@@ -12,8 +14,6 @@
 #define ECHO_PIN 9       // Ultrasonic ECHO
 #define LED2_PIN 6       // LED2 toggled by ultrasonic condition
 
-#define LIGHT_AO A0      // Light sensor AO pin (analog brightness level)
-
 #define LED3_PIN 7       // LED3 toggled every 1s by timer
 
 // ---------- Global Variables ----------
@@ -22,7 +22,9 @@ volatile bool led2State = LOW;
 volatile bool led3State = LOW;
 
 unsigned long lastMillis = 0;          // software timer for 1s interval
-int lastBrightness = -1;               // store last brightness level
+float lastBrightness = -1;             // store last brightness level
+
+BH1750 lightMeter;                     // BH1750 object
 
 // ---------- ISR: Button ----------
 void buttonISR() {
@@ -45,10 +47,17 @@ void setup() {
   pinMode(LED3_PIN, OUTPUT);
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  pinMode(LIGHT_AO, INPUT);
 
   // Attach button interrupt
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), buttonISR, FALLING);
+
+  // BH1750 init
+  Wire.begin();       // Start I2C
+  if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE)) {
+    Serial.println("BH1750 initialized successfully.");
+  } else {
+    Serial.println("Error initializing BH1750.");
+  }
 
   Serial.println("Setup complete.");
 }
@@ -57,7 +66,7 @@ void setup() {
 void loop() {
   unsigned long currentMillis = millis();
 
-  // --- Timer Task (runs every 1 second) ---
+  // --- Timer Interrupt (runs every 1 second) ---
   if (currentMillis - lastMillis >= 1000) {
     lastMillis = currentMillis;
 
@@ -73,7 +82,7 @@ void loop() {
     delayMicroseconds(10);
     digitalWrite(TRIG_PIN, LOW);
 
-    long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+    long duration = pulseIn(ECHO_PIN, HIGH, 30000); // timeout 30ms
     long distance = duration * 0.034 / 2;
 
     Serial.print("Ultrasonic distance: ");
@@ -86,29 +95,32 @@ void loop() {
       Serial.println("Ultrasonic condition met: LED2 toggled");
     }
 
-    // --- Light Sensor (AO Reading) ---
-    int brightness = analogRead(LIGHT_AO);
+    // --- BH1750 Light Sensor ---
+    float lux = lightMeter.readLightLevel();
+    if (lux < 0) {
+      Serial.println("Error reading BH1750.");
+    } else {
+      // Only print if brightness changed significantly (>5 lux)
+      if (abs(lux - lastBrightness) > 5) {
+        if (lux > lastBrightness && lastBrightness != -1) {
+          Serial.print("Brightness increased from ");
+          Serial.print(lastBrightness);
+          Serial.print(" → ");
+          Serial.println(lux);
+        } 
+        else if (lux < lastBrightness && lastBrightness != -1) {
+          Serial.print("Brightness decreased from ");
+          Serial.print(lastBrightness);
+          Serial.print(" → ");
+          Serial.println(lux);
+        } 
+        else {
+          Serial.print("Current Brightness: ");
+          Serial.println(lux);
+        }
 
-    // Only print if brightness changed significantly
-    if (abs(brightness - lastBrightness) > 50) {
-      if (brightness > lastBrightness && lastBrightness != -1) {
-        Serial.print("Brightness increased from ");
-        Serial.print(lastBrightness);
-        Serial.print(" → ");
-        Serial.println(brightness);
-      } 
-      else if (brightness < lastBrightness && lastBrightness != -1) {
-        Serial.print("Brightness decreased from ");
-        Serial.print(lastBrightness);
-        Serial.print(" → ");
-        Serial.println(brightness);
-      } 
-      else {
-        Serial.print("Current Brightness: ");
-        Serial.println(brightness);
+        lastBrightness = lux; // update stored value
       }
-
-      lastBrightness = brightness; // update stored value
     }
   }
 }
